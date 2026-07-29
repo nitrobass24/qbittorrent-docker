@@ -31,6 +31,7 @@ jobs:
             "qbt_build_tool=cmake" \
             "qbt_qt_version=6" \
             "qbt_libtorrent_version=1.2" \
+            "qbt_boost_tag=boost-1.86.0" \
             "qbt_qbittorrent_tag=${QBT_TAG}" \
             "qbt_patches_url=${{ github.repository }}" \
             > env.custom
