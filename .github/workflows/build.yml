@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Fetch static build script
-        run: curl -sLo qbittorrent-nox-static.sh https://raw.githubusercontent.com/userdocs/qbittorrent-nox-static/master/qbittorrent-nox-static.sh
+        run: curl -sLo qbt-nox-static.bash https://raw.githubusercontent.com/userdocs/qbittorrent-nox-static/master/qbt-nox-static.bash
 
       - name: Prepare build env
         run: |
@@ -46,11 +46,14 @@ jobs:
           mkdir -p qbt-build/patches
           cp -r patches/* qbt-build/patches/
 
+      - name: Bootstrap deps
+        run: docker exec -w /root qbt bash qbt-nox-static.bash bootstrap_deps
+
       - name: Bootstrap
-        run: docker exec -w /root qbt bash qbittorrent-nox-static.sh -bs-a
+        run: docker exec -w /root qbt bash qbt-nox-static.bash -bs-a
 
       - name: Build all modules
-        run: docker exec -w /root qbt bash qbittorrent-nox-static.sh all
+        run: docker exec -w /root qbt bash qbt-nox-static.bash all
 
       - name: Collect binary
         run: |
