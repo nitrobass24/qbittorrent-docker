@@ -1,8 +1,8 @@
 diff --git a/src/webui/CMakeLists.txt b/src/webui/CMakeLists.txt
-index 4597ed468..c692db60f 100644
+index 4597ed468..32086be8b 100644
 --- a/src/webui/CMakeLists.txt
 +++ b/src/webui/CMakeLists.txt
-@@ -10,6 +10,7 @@ add_library(qbt_webui STATIC
+@@ -10,11 +10,13 @@ add_library(qbt_webui STATIC
      api/logcontroller.h
      api/rsscontroller.h
      api/searchcontroller.h
@@ -10,7 +10,13 @@ index 4597ed468..c692db60f 100644
      api/synccontroller.h
      api/torrentcreatorcontroller.h
      api/torrentscontroller.h
-@@ -28,6 +29,7 @@ add_library(qbt_webui STATIC
+     api/transfercontroller.h
+     api/serialize/serialize_torrent.h
++    api/serialize/serialize_trackerentry.h
+     clientdatastorage.h
+     webapplication.h
+     webui.h
+@@ -28,11 +30,13 @@ add_library(qbt_webui STATIC
      api/logcontroller.cpp
      api/rsscontroller.cpp
      api/searchcontroller.cpp
@@ -18,12 +24,167 @@ index 4597ed468..c692db60f 100644
      api/synccontroller.cpp
      api/torrentcreatorcontroller.cpp
      api/torrentscontroller.cpp
+     api/transfercontroller.cpp
+     api/serialize/serialize_torrent.cpp
++    api/serialize/serialize_trackerentry.cpp
+     clientdatastorage.cpp
+     webapplication.cpp
+     webui.cpp
+diff --git a/src/webui/api/serialize/serialize_trackerentry.cpp b/src/webui/api/serialize/serialize_trackerentry.cpp
+new file mode 100644
+index 000000000..f26f051e3
+--- /dev/null
++++ b/src/webui/api/serialize/serialize_trackerentry.cpp
+@@ -0,0 +1,81 @@
++/*
++ * Bittorrent Client using Qt and libtorrent.
++ * Copyright (C) 2026  nitrobass24
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ * In addition, as a special exception, the copyright holders give permission to
++ * link this program with the OpenSSL project's "OpenSSL" library (or with
++ * modified versions of it that use the same license as the "OpenSSL" library),
++ * and distribute the linked executables. You must obey the GNU General Public
++ * License in all respects for all of the code used other than "OpenSSL".  If you
++ * modify file(s), you may extend this exception to your version of the file(s),
++ * but you are not obligated to do so. If you do not wish to do so, delete this
++ * exception statement from your version.
++ */
++
++#include "serialize_trackerentry.h"
++
++#include <chrono>
++
++#include <QJsonArray>
++
++#include "base/bittorrent/trackerentrystatus.h"
++
++QJsonObject serialize(const BitTorrent::TrackerEntryStatus &tracker)
++{
++    const auto now = std::chrono::system_clock::now();
++    const auto timepointNow = BitTorrent::AnnounceTimePoint::clock::now();
++    const auto toSecondsSinceEpoch = [&now, &timepointNow](const BitTorrent::AnnounceTimePoint &time) -> qint64
++    {
++        const auto timeEpoch = (now + (time - timepointNow)).time_since_epoch();
++        return std::chrono::duration_cast<std::chrono::seconds>(timeEpoch).count();
++    };
++
++    QJsonArray endpointsList;
++    for (const BitTorrent::TrackerEndpointStatus &endpoint : tracker.endpoints)
++    {
++        endpointsList << QJsonObject
++        {
++            {KEY_TRACKER_NAME, endpoint.name},
++            {KEY_TRACKER_UPDATING, endpoint.isUpdating},
++            {KEY_TRACKER_STATUS, static_cast<int>(endpoint.state)},
++            {KEY_TRACKER_MSG, endpoint.message},
++            {KEY_TRACKER_BT_VERSION, static_cast<int>(endpoint.btVersion)},
++            {KEY_TRACKER_PEERS_COUNT, endpoint.numPeers},
++            {KEY_TRACKER_SEEDS_COUNT, endpoint.numSeeds},
++            {KEY_TRACKER_LEECHES_COUNT, endpoint.numLeeches},
++            {KEY_TRACKER_DOWNLOADED_COUNT, endpoint.numDownloaded},
++            {KEY_TRACKER_NEXT_ANNOUNCE, toSecondsSinceEpoch(endpoint.nextAnnounceTime)},
++            {KEY_TRACKER_MIN_ANNOUNCE, toSecondsSinceEpoch(endpoint.minAnnounceTime)}
++        };
++    }
++
++    return
++    {
++        {KEY_TRACKER_URL, tracker.url},
++        {KEY_TRACKER_TIER, tracker.tier},
++        {KEY_TRACKER_UPDATING, tracker.isUpdating},
++        {KEY_TRACKER_STATUS, static_cast<int>(tracker.state)},
++        {KEY_TRACKER_MSG, tracker.message},
++        {KEY_TRACKER_PEERS_COUNT, tracker.numPeers},
++        {KEY_TRACKER_SEEDS_COUNT, tracker.numSeeds},
++        {KEY_TRACKER_LEECHES_COUNT, tracker.numLeeches},
++        {KEY_TRACKER_DOWNLOADED_COUNT, tracker.numDownloaded},
++        {KEY_TRACKER_NEXT_ANNOUNCE, toSecondsSinceEpoch(tracker.nextAnnounceTime)},
++        {KEY_TRACKER_MIN_ANNOUNCE, toSecondsSinceEpoch(tracker.minAnnounceTime)},
++        {KEY_TRACKER_ENDPOINTS, endpointsList}
++    };
++}
+diff --git a/src/webui/api/serialize/serialize_trackerentry.h b/src/webui/api/serialize/serialize_trackerentry.h
+new file mode 100644
+index 000000000..7bed7c31f
+--- /dev/null
++++ b/src/webui/api/serialize/serialize_trackerentry.h
+@@ -0,0 +1,56 @@
++/*
++ * Bittorrent Client using Qt and libtorrent.
++ * Copyright (C) 2026  nitrobass24
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ * In addition, as a special exception, the copyright holders give permission to
++ * link this program with the OpenSSL project's "OpenSSL" library (or with
++ * modified versions of it that use the same license as the "OpenSSL" library),
++ * and distribute the linked executables. You must obey the GNU General Public
++ * License in all respects for all of the code used other than "OpenSSL".  If you
++ * modify file(s), you may extend this exception to your version of the file(s),
++ * but you are not obligated to do so. If you do not wish to do so, delete this
++ * exception statement from your version.
++ */
++
++#pragma once
++
++#include <QJsonObject>
++
++#include "base/global.h"
++
++namespace BitTorrent
++{
++    struct TrackerEntryStatus;
++}
++
++// Tracker keys
++inline const QString KEY_TRACKER_URL = u"url"_s;
++inline const QString KEY_TRACKER_NAME = u"name"_s;
++inline const QString KEY_TRACKER_UPDATING = u"updating"_s;
++inline const QString KEY_TRACKER_STATUS = u"status"_s;
++inline const QString KEY_TRACKER_TIER = u"tier"_s;
++inline const QString KEY_TRACKER_MSG = u"msg"_s;
++inline const QString KEY_TRACKER_BT_VERSION = u"bt_version"_s;
++inline const QString KEY_TRACKER_PEERS_COUNT = u"num_peers"_s;
++inline const QString KEY_TRACKER_SEEDS_COUNT = u"num_seeds"_s;
++inline const QString KEY_TRACKER_LEECHES_COUNT = u"num_leeches"_s;
++inline const QString KEY_TRACKER_DOWNLOADED_COUNT = u"num_downloaded"_s;
++inline const QString KEY_TRACKER_NEXT_ANNOUNCE = u"next_announce"_s;
++inline const QString KEY_TRACKER_MIN_ANNOUNCE = u"min_announce"_s;
++inline const QString KEY_TRACKER_ENDPOINTS = u"endpoints"_s;
++
++QJsonObject serialize(const BitTorrent::TrackerEntryStatus &tracker);
 diff --git a/src/webui/api/serializedtorrentscache.cpp b/src/webui/api/serializedtorrentscache.cpp
 new file mode 100644
-index 000000000..23058e960
+index 000000000..f2ecd3e96
 --- /dev/null
 +++ b/src/webui/api/serializedtorrentscache.cpp
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,100 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
 + * Copyright (C) 2026  nitrobass24
@@ -54,11 +215,15 @@ index 000000000..23058e960
 +
 +#include "serializedtorrentscache.h"
 +
++#include <QJsonArray>
 +#include <QList>
 +
 +#include "base/bittorrent/session.h"
 +#include "base/bittorrent/torrent.h"
++#include "base/bittorrent/trackerentrystatus.h"
++#include "base/global.h"
 +#include "serialize/serialize_torrent.h"
++#include "serialize/serialize_trackerentry.h"
 +
 +SerializedTorrentsCache::SerializedTorrentsCache(QObject *parent)
 +    : QObject(parent)
@@ -70,7 +235,7 @@ index 000000000..23058e960
 +        for (const BitTorrent::Torrent *torrent : torrents)
 +            invalidate(torrent);
 +    });
-+    connect(session, &BitTorrent::Session::torrentAboutToBeRemoved, this, &SerializedTorrentsCache::invalidate);
++    connect(session, &BitTorrent::Session::torrentAboutToBeRemoved, this, &SerializedTorrentsCache::invalidateWithTrackers);
 +    connect(session, &BitTorrent::Session::torrentCategoryChanged, this, &SerializedTorrentsCache::invalidate);
 +    connect(session, &BitTorrent::Session::torrentFinished, this, &SerializedTorrentsCache::invalidate);
 +    connect(session, &BitTorrent::Session::torrentFinishedChecking, this, &SerializedTorrentsCache::invalidate);
@@ -81,10 +246,12 @@ index 000000000..23058e960
 +    connect(session, &BitTorrent::Session::torrentSavingModeChanged, this, &SerializedTorrentsCache::invalidate);
 +    connect(session, &BitTorrent::Session::torrentTagAdded, this, &SerializedTorrentsCache::invalidate);
 +    connect(session, &BitTorrent::Session::torrentTagRemoved, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::trackersAdded, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::trackersRemoved, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::trackersReset, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::trackerEntryStatusesUpdated, this, &SerializedTorrentsCache::invalidate);
++    // tracker changes also affect fields of the serialized torrent itself
++    // ("tracker", "trackers_count", "reannounce"), so they invalidate both caches
++    connect(session, &BitTorrent::Session::trackersAdded, this, &SerializedTorrentsCache::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackersRemoved, this, &SerializedTorrentsCache::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackersReset, this, &SerializedTorrentsCache::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackerEntryStatusesUpdated, this, &SerializedTorrentsCache::invalidateWithTrackers);
 +}
 +
 +QJsonObject SerializedTorrentsCache::value(const BitTorrent::Torrent &torrent)
@@ -95,16 +262,35 @@ index 000000000..23058e960
 +    return *it;
 +}
 +
++QJsonArray SerializedTorrentsCache::trackers(const BitTorrent::Torrent &torrent)
++{
++    auto it = m_trackers.constFind(torrent.id());
++    if (it == m_trackers.cend())
++    {
++        QJsonArray serializedTrackers;
++        for (const BitTorrent::TrackerEntryStatus &trackerStatus : asConst(torrent.trackers()))
++            serializedTrackers.append(serialize(trackerStatus));
++        it = m_trackers.insert(torrent.id(), serializedTrackers);
++    }
++    return *it;
++}
++
 +void SerializedTorrentsCache::invalidate(const BitTorrent::Torrent *torrent)
 +{
 +    m_cache.remove(torrent->id());
 +}
++
++void SerializedTorrentsCache::invalidateWithTrackers(const BitTorrent::Torrent *torrent)
++{
++    m_cache.remove(torrent->id());
++    m_trackers.remove(torrent->id());
++}
 diff --git a/src/webui/api/serializedtorrentscache.h b/src/webui/api/serializedtorrentscache.h
 new file mode 100644
-index 000000000..14de8abe2
+index 000000000..5fe840aba
 --- /dev/null
 +++ b/src/webui/api/serializedtorrentscache.h
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,65 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
 + * Copyright (C) 2026  nitrobass24
@@ -136,6 +322,7 @@ index 000000000..14de8abe2
 +#pragma once
 +
 +#include <QHash>
++#include <QJsonArray>
 +#include <QJsonObject>
 +#include <QObject>
 +
@@ -160,25 +347,106 @@ index 000000000..14de8abe2
 +    explicit SerializedTorrentsCache(QObject *parent = nullptr);
 +
 +    QJsonObject value(const BitTorrent::Torrent &torrent);
++    QJsonArray trackers(const BitTorrent::Torrent &torrent);
 +
 +private:
 +    void invalidate(const BitTorrent::Torrent *torrent);
++    void invalidateWithTrackers(const BitTorrent::Torrent *torrent);
 +
 +    QHash<BitTorrent::TorrentID, QJsonObject> m_cache;
++    QHash<BitTorrent::TorrentID, QJsonArray> m_trackers;
 +};
 diff --git a/src/webui/api/torrentscontroller.cpp b/src/webui/api/torrentscontroller.cpp
-index 752053b43..f167f8bdc 100644
+index 752053b43..0e467cb83 100644
 --- a/src/webui/api/torrentscontroller.cpp
 +++ b/src/webui/api/torrentscontroller.cpp
-@@ -69,6 +69,7 @@
+@@ -69,22 +69,8 @@
  #include "apierror.h"
  #include "apistatus.h"
  #include "serialize/serialize_torrent.h"
+-
+-// Tracker keys
+-const QString KEY_TRACKER_URL = u"url"_s;
+-const QString KEY_TRACKER_NAME = u"name"_s;
+-const QString KEY_TRACKER_UPDATING = u"updating"_s;
+-const QString KEY_TRACKER_STATUS = u"status"_s;
+-const QString KEY_TRACKER_TIER = u"tier"_s;
+-const QString KEY_TRACKER_MSG = u"msg"_s;
+-const QString KEY_TRACKER_BT_VERSION = u"bt_version"_s;
+-const QString KEY_TRACKER_PEERS_COUNT = u"num_peers"_s;
+-const QString KEY_TRACKER_SEEDS_COUNT = u"num_seeds"_s;
+-const QString KEY_TRACKER_LEECHES_COUNT = u"num_leeches"_s;
+-const QString KEY_TRACKER_DOWNLOADED_COUNT = u"num_downloaded"_s;
+-const QString KEY_TRACKER_NEXT_ANNOUNCE = u"next_announce"_s;
+-const QString KEY_TRACKER_MIN_ANNOUNCE = u"min_announce"_s;
+-const QString KEY_TRACKER_ENDPOINTS = u"endpoints"_s;
++#include "serialize/serialize_trackerentry.h"
 +#include "serializedtorrentscache.h"
  
- // Tracker keys
- const QString KEY_TRACKER_URL = u"url"_s;
-@@ -551,8 +552,9 @@ namespace
+ // Web seed keys
+ const QString KEY_WEBSEED_URL = u"url"_s;
+@@ -277,60 +263,6 @@ namespace
+         return {dht, pex, lsd};
+     }
+ 
+-    QJsonArray getTrackers(const BitTorrent::Torrent *const torrent)
+-    {
+-        const auto now = std::chrono::system_clock::now();
+-        const auto timepointNow = BitTorrent::AnnounceTimePoint::clock::now();
+-        const auto toSecondsSinceEpoch = [&now, &timepointNow](const BitTorrent::AnnounceTimePoint &time) -> qint64
+-        {
+-            const auto timeEpoch = (now + (time - timepointNow)).time_since_epoch();
+-            return std::chrono::duration_cast<std::chrono::seconds>(timeEpoch).count();
+-        };
+-
+-        QJsonArray trackerList;
+-
+-        for (const BitTorrent::TrackerEntryStatus &tracker : asConst(torrent->trackers()))
+-        {
+-            QJsonArray endpointsList;
+-
+-            for (const BitTorrent::TrackerEndpointStatus &endpoint : tracker.endpoints)
+-            {
+-                endpointsList << QJsonObject
+-                {
+-                    {KEY_TRACKER_NAME, endpoint.name},
+-                    {KEY_TRACKER_UPDATING, endpoint.isUpdating},
+-                    {KEY_TRACKER_STATUS, static_cast<int>(endpoint.state)},
+-                    {KEY_TRACKER_MSG, endpoint.message},
+-                    {KEY_TRACKER_BT_VERSION, static_cast<int>(endpoint.btVersion)},
+-                    {KEY_TRACKER_PEERS_COUNT, endpoint.numPeers},
+-                    {KEY_TRACKER_SEEDS_COUNT, endpoint.numSeeds},
+-                    {KEY_TRACKER_LEECHES_COUNT, endpoint.numLeeches},
+-                    {KEY_TRACKER_DOWNLOADED_COUNT, endpoint.numDownloaded},
+-                    {KEY_TRACKER_NEXT_ANNOUNCE, toSecondsSinceEpoch(endpoint.nextAnnounceTime)},
+-                    {KEY_TRACKER_MIN_ANNOUNCE, toSecondsSinceEpoch(endpoint.minAnnounceTime)}
+-                };
+-            }
+-
+-            trackerList << QJsonObject
+-            {
+-                {KEY_TRACKER_URL, tracker.url},
+-                {KEY_TRACKER_TIER, tracker.tier},
+-                {KEY_TRACKER_UPDATING, tracker.isUpdating},
+-                {KEY_TRACKER_STATUS, static_cast<int>(tracker.state)},
+-                {KEY_TRACKER_MSG, tracker.message},
+-                {KEY_TRACKER_PEERS_COUNT, tracker.numPeers},
+-                {KEY_TRACKER_SEEDS_COUNT, tracker.numSeeds},
+-                {KEY_TRACKER_LEECHES_COUNT, tracker.numLeeches},
+-                {KEY_TRACKER_DOWNLOADED_COUNT, tracker.numDownloaded},
+-                {KEY_TRACKER_NEXT_ANNOUNCE, toSecondsSinceEpoch(tracker.nextAnnounceTime)},
+-                {KEY_TRACKER_MIN_ANNOUNCE, toSecondsSinceEpoch(tracker.minAnnounceTime)},
+-                {KEY_TRACKER_ENDPOINTS, endpointsList}
+-            };
+-        }
+-
+-        return trackerList;
+-    }
+-
+     QJsonArray getFiles(const BitTorrent::Torrent *const torrent, QList<int> fileIndexes = {})
+     {
+         Q_ASSERT(torrent->hasMetadata());
+@@ -551,8 +483,9 @@ namespace
      }
  }
  
@@ -189,7 +457,7 @@ index 752053b43..f167f8bdc 100644
  {
      connect(BitTorrent::Session::instance(), &BitTorrent::Session::metadataDownloaded, this, &TorrentsController::onMetadataDownloaded);
  }
-@@ -618,13 +620,13 @@ void TorrentsController::infoAction()
+@@ -618,18 +551,18 @@ void TorrentsController::infoAction()
      }
  
      const TorrentFilter torrentFilter {parseTorrentStatus(filter), idSet, category, tag, isPrivate};
@@ -205,7 +473,13 @@ index 752053b43..f167f8bdc 100644
  
          if (includeFiles && torrent->hasMetadata())
              serializedTorrent.insert(KEY_PROP_FILES, getFiles(torrent));
-@@ -642,40 +644,25 @@ void TorrentsController::infoAction()
+         if (includeTrackers)
+-            serializedTorrent.insert(KEY_PROP_TRACKERS, getTrackers(torrent));
++            serializedTorrent.insert(KEY_PROP_TRACKERS, m_serializationCache->trackers(*torrent));
+ 
+         torrentList.append(serializedTorrent);
+     }
+@@ -642,40 +575,25 @@ void TorrentsController::infoAction()
  
      if (!sortedColumn.isEmpty())
      {
@@ -257,7 +531,7 @@ index 752053b43..f167f8bdc 100644
              return reverse ? lessThan(value2, value1) : lessThan(value1, value2);
          });
      }
-@@ -691,7 +678,10 @@ void TorrentsController::infoAction()
+@@ -691,7 +609,10 @@ void TorrentsController::infoAction()
      if ((limit > 0) || (offset > 0))
          torrentList = torrentList.mid(offset, limit);
  
@@ -269,6 +543,15 @@ index 752053b43..f167f8bdc 100644
  }
  
  // Returns the properties for a torrent in JSON format.
+@@ -832,7 +753,7 @@ void TorrentsController::trackersAction()
+     QJsonArray trackersList = getStickyTrackers(torrent);
+ 
+     // merge QJsonArray
+-    for (const auto &tracker : asConst(getTrackers(torrent)))
++    for (const auto &tracker : asConst(m_serializationCache->trackers(*torrent)))
+         trackersList.append(tracker);
+ 
+     setResult(trackersList);
 diff --git a/src/webui/api/torrentscontroller.h b/src/webui/api/torrentscontroller.h
 index d3ef62a9d..52dab6b10 100644
 --- a/src/webui/api/torrentscontroller.h
