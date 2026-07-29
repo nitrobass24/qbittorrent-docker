@@ -1,0 +1,70 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [patches/**, Dockerfile, .github/workflows/build.yml]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  QBT_TAG: release-5.2.3
+  IMAGE: ghcr.io/${{ github.repository_owner }}/qbittorrent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch static build script
+        run: curl -sLo qbittorrent-nox-static.sh https://raw.githubusercontent.com/userdocs/qbittorrent-nox-static/master/qbittorrent-nox-static.sh
+
+      - name: Prepare build env
+        run: |
+          printf '%s\n' \
+            "qbt_build_dir=qbt-build" \
+            "qbt_build_tool=cmake" \
+            "qbt_qt_version=6" \
+            "qbt_libtorrent_version=1.2" \
+            "qbt_qbittorrent_tag=${QBT_TAG}" \
+            "qbt_patches_url=${{ github.repository }}" \
+            > env.custom
+
+      - name: Start alpine build container
+        run: |
+          docker run -d --name qbt --env-file env.custom -w /root -v "$PWD:/root" alpine:latest sleep infinity
+          docker exec qbt apk add --no-cache autoconf automake bash bash-completion build-base cmake coreutils curl git libtool linux-headers ninja-build perl pkgconf python3 python3-dev re2c tar ttf-freefont util-linux xz zip
+
+      - name: Stage local patches
+        run: |
+          mkdir -p qbt-build/patches
+          cp -r patches/* qbt-build/patches/
+
+      - name: Bootstrap
+        run: docker exec -w /root qbt bash qbittorrent-nox-static.sh -bs-a
+
+      - name: Build all modules
+        run: docker exec -w /root qbt bash qbittorrent-nox-static.sh all
+
+      - name: Collect binary
+        run: |
+          sudo cp qbt-build/completed/qbittorrent-nox qbittorrent-nox
+          file qbittorrent-nox
+          ./qbittorrent-nox --version || true
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          docker build -t "${IMAGE}:${QBT_TAG}-cache" .
+          docker push "${IMAGE}:${QBT_TAG}-cache"
