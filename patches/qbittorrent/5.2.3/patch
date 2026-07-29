@@ -20,13 +20,13 @@ index 4597ed468..c692db60f 100644
      api/torrentscontroller.cpp
 diff --git a/src/webui/api/serializedtorrentscache.cpp b/src/webui/api/serializedtorrentscache.cpp
 new file mode 100644
-index 000000000..5dd06ee25
+index 000000000..23058e960
 --- /dev/null
 +++ b/src/webui/api/serializedtorrentscache.cpp
 @@ -0,0 +1,75 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
-+ * Copyright (C) 2026  Stephen Davis <stephendavis24@gmail.com>
++ * Copyright (C) 2026  nitrobass24
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -101,13 +101,13 @@ index 000000000..5dd06ee25
 +}
 diff --git a/src/webui/api/serializedtorrentscache.h b/src/webui/api/serializedtorrentscache.h
 new file mode 100644
-index 000000000..9a4be1d7a
+index 000000000..14de8abe2
 --- /dev/null
 +++ b/src/webui/api/serializedtorrentscache.h
 @@ -0,0 +1,61 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
-+ * Copyright (C) 2026  Stephen Davis <stephendavis24@gmail.com>
++ * Copyright (C) 2026  nitrobass24
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
