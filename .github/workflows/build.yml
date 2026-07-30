@@ -19,8 +19,10 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/qbittorrent
 
 jobs:
-  build:
+  deps:
     runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.key.outputs.key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,22 +42,38 @@ jobs:
             "qbt_patches_url=${{ github.repository }}" \
             > env.custom
 
-      - name: Restore dependency cache
+      - name: Compute cache key
+        id: key
+        run: echo "key=deps-v1-${{ hashFiles('qbt-nox-static.bash', 'env.custom') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Pin build inputs for image job
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-inputs
+          path: |
+            qbt-nox-static.bash
+            env.custom
+
+      - name: Probe dependency cache
         id: deps-cache
         uses: actions/cache/restore@v4
         with:
           path: qbt-build
-          key: deps-v1-${{ hashFiles('qbt-nox-static.bash', 'env.custom') }}
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
 
       - name: Start alpine build container
+        if: steps.deps-cache.outputs.cache-hit != 'true'
         run: |
           docker run -d --name qbt --env-file env.custom -w /root -v "$PWD:/root" alpine:latest sleep infinity
           docker exec qbt apk add --no-cache autoconf automake bash bash-completion build-base cmake coreutils curl git libtool linux-headers ninja-build perl pkgconf python3 python3-dev re2c tar ttf-freefont util-linux xz zip
 
       - name: Bootstrap deps
+        if: steps.deps-cache.outputs.cache-hit != 'true'
         run: docker exec -w /root qbt bash qbt-nox-static.bash bootstrap_deps
 
       - name: Bootstrap
+        if: steps.deps-cache.outputs.cache-hit != 'true'
         run: docker exec -w /root qbt bash qbt-nox-static.bash -bs-a
 
       - name: Build zlib
@@ -95,7 +113,37 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: qbt-build
-          key: deps-v1-${{ hashFiles('qbt-nox-static.bash', 'env.custom') }}
+          key: ${{ steps.key.outputs.key }}
+
+  image:
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore pinned build inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: build-inputs
+
+      - name: Restore dependency cache
+        uses: actions/cache/restore@v4
+        with:
+          path: qbt-build
+          key: ${{ needs.deps.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Start alpine build container
+        run: |
+          docker run -d --name qbt --env-file env.custom -w /root -v "$PWD:/root" alpine:latest sleep infinity
+          docker exec qbt apk add --no-cache autoconf automake bash bash-completion build-base cmake coreutils curl git libtool linux-headers ninja-build perl pkgconf python3 python3-dev re2c tar ttf-freefont util-linux xz zip
+
+      - name: Bootstrap deps
+        run: docker exec -w /root qbt bash qbt-nox-static.bash bootstrap_deps
+
+      - name: Bootstrap
+        run: docker exec -w /root qbt bash qbt-nox-static.bash -bs-a
 
       - name: Stage local patches
         run: |
