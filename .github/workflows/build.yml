@@ -58,10 +58,6 @@ jobs:
       - name: Bootstrap
         run: docker exec -w /root qbt bash qbt-nox-static.bash -bs-a
 
-      - name: Build glibc
-        if: steps.deps-cache.outputs.cache-hit != 'true'
-        run: docker exec -w /root qbt bash qbt-nox-static.bash glibc
-
       - name: Build zlib
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: docker exec -w /root qbt bash qbt-nox-static.bash zlib
@@ -69,10 +65,6 @@ jobs:
       - name: Build iconv
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: docker exec -w /root qbt bash qbt-nox-static.bash iconv
-
-      - name: Build icu
-        if: steps.deps-cache.outputs.cache-hit != 'true'
-        run: docker exec -w /root qbt bash qbt-nox-static.bash icu
 
       - name: Build openssl
         if: steps.deps-cache.outputs.cache-hit != 'true'
