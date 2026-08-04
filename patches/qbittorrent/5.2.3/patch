@@ -1,5 +1,5 @@
 diff --git a/src/webui/CMakeLists.txt b/src/webui/CMakeLists.txt
-index 4597ed468..b879da27d 100644
+index 4597ed468..4784c7017 100644
 --- a/src/webui/CMakeLists.txt
 +++ b/src/webui/CMakeLists.txt
 @@ -8,13 +8,16 @@ add_library(qbt_webui STATIC
@@ -9,10 +9,10 @@ index 4597ed468..b879da27d 100644
 +    api/maindatastore.h
      api/rsscontroller.h
      api/searchcontroller.h
-+    api/serializedtorrentscache.h
      api/synccontroller.h
      api/torrentcreatorcontroller.h
      api/torrentscontroller.h
++    api/torrentserializer.h
      api/transfercontroller.h
      api/serialize/serialize_torrent.h
 +    api/serialize/serialize_trackerentry.h
@@ -26,10 +26,10 @@ index 4597ed468..b879da27d 100644
 +    api/maindatastore.cpp
      api/rsscontroller.cpp
      api/searchcontroller.cpp
-+    api/serializedtorrentscache.cpp
      api/synccontroller.cpp
      api/torrentcreatorcontroller.cpp
      api/torrentscontroller.cpp
++    api/torrentserializer.cpp
      api/transfercontroller.cpp
      api/serialize/serialize_torrent.cpp
 +    api/serialize/serialize_trackerentry.cpp
@@ -794,13 +794,14 @@ index 000000000..fbc810e4d
 +};
 diff --git a/src/webui/api/serialize/serialize_trackerentry.cpp b/src/webui/api/serialize/serialize_trackerentry.cpp
 new file mode 100644
-index 000000000..f26f051e3
+index 000000000..d504094a7
 --- /dev/null
 +++ b/src/webui/api/serialize/serialize_trackerentry.cpp
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,82 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
 + * Copyright (C) 2026  nitrobass24
++ * Copyright (C) 2018-2025  Vladimir Golovnev <glassez@yandex.ru>
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -881,13 +882,14 @@ index 000000000..f26f051e3
 +}
 diff --git a/src/webui/api/serialize/serialize_trackerentry.h b/src/webui/api/serialize/serialize_trackerentry.h
 new file mode 100644
-index 000000000..7bed7c31f
+index 000000000..0406a0206
 --- /dev/null
 +++ b/src/webui/api/serialize/serialize_trackerentry.h
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,57 @@
 +/*
 + * Bittorrent Client using Qt and libtorrent.
 + * Copyright (C) 2026  nitrobass24
++ * Copyright (C) 2018-2025  Vladimir Golovnev <glassez@yandex.ru>
 + *
 + * This program is free software; you can redistribute it and/or
 + * modify it under the terms of the GNU General Public License
@@ -941,183 +943,6 @@ index 000000000..7bed7c31f
 +inline const QString KEY_TRACKER_ENDPOINTS = u"endpoints"_s;
 +
 +QJsonObject serialize(const BitTorrent::TrackerEntryStatus &tracker);
-diff --git a/src/webui/api/serializedtorrentscache.cpp b/src/webui/api/serializedtorrentscache.cpp
-new file mode 100644
-index 000000000..f2ecd3e96
---- /dev/null
-+++ b/src/webui/api/serializedtorrentscache.cpp
-@@ -0,0 +1,100 @@
-+/*
-+ * Bittorrent Client using Qt and libtorrent.
-+ * Copyright (C) 2026  nitrobass24
-+ *
-+ * This program is free software; you can redistribute it and/or
-+ * modify it under the terms of the GNU General Public License
-+ * as published by the Free Software Foundation; either version 2
-+ * of the License, or (at your option) any later version.
-+ *
-+ * This program is distributed in the hope that it will be useful,
-+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+ * GNU General Public License for more details.
-+ *
-+ * You should have received a copy of the GNU General Public License
-+ * along with this program; if not, write to the Free Software
-+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-+ *
-+ * In addition, as a special exception, the copyright holders give permission to
-+ * link this program with the OpenSSL project's "OpenSSL" library (or with
-+ * modified versions of it that use the same license as the "OpenSSL" library),
-+ * and distribute the linked executables. You must obey the GNU General Public
-+ * License in all respects for all of the code used other than "OpenSSL".  If you
-+ * modify file(s), you may extend this exception to your version of the file(s),
-+ * but you are not obligated to do so. If you do not wish to do so, delete this
-+ * exception statement from your version.
-+ */
-+
-+#include "serializedtorrentscache.h"
-+
-+#include <QJsonArray>
-+#include <QList>
-+
-+#include "base/bittorrent/session.h"
-+#include "base/bittorrent/torrent.h"
-+#include "base/bittorrent/trackerentrystatus.h"
-+#include "base/global.h"
-+#include "serialize/serialize_torrent.h"
-+#include "serialize/serialize_trackerentry.h"
-+
-+SerializedTorrentsCache::SerializedTorrentsCache(QObject *parent)
-+    : QObject(parent)
-+{
-+    const auto *session = BitTorrent::Session::instance();
-+    connect(session, &BitTorrent::Session::torrentsUpdated, this
-+            , [this](const QList<BitTorrent::Torrent *> &torrents)
-+    {
-+        for (const BitTorrent::Torrent *torrent : torrents)
-+            invalidate(torrent);
-+    });
-+    connect(session, &BitTorrent::Session::torrentAboutToBeRemoved, this, &SerializedTorrentsCache::invalidateWithTrackers);
-+    connect(session, &BitTorrent::Session::torrentCategoryChanged, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentFinished, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentFinishedChecking, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentMetadataReceived, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentStopped, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentStarted, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentSavePathChanged, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentSavingModeChanged, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentTagAdded, this, &SerializedTorrentsCache::invalidate);
-+    connect(session, &BitTorrent::Session::torrentTagRemoved, this, &SerializedTorrentsCache::invalidate);
-+    // tracker changes also affect fields of the serialized torrent itself
-+    // ("tracker", "trackers_count", "reannounce"), so they invalidate both caches
-+    connect(session, &BitTorrent::Session::trackersAdded, this, &SerializedTorrentsCache::invalidateWithTrackers);
-+    connect(session, &BitTorrent::Session::trackersRemoved, this, &SerializedTorrentsCache::invalidateWithTrackers);
-+    connect(session, &BitTorrent::Session::trackersReset, this, &SerializedTorrentsCache::invalidateWithTrackers);
-+    connect(session, &BitTorrent::Session::trackerEntryStatusesUpdated, this, &SerializedTorrentsCache::invalidateWithTrackers);
-+}
-+
-+QJsonObject SerializedTorrentsCache::value(const BitTorrent::Torrent &torrent)
-+{
-+    auto it = m_cache.constFind(torrent.id());
-+    if (it == m_cache.cend())
-+        it = m_cache.insert(torrent.id(), QJsonObject::fromVariantMap(serialize(torrent)));
-+    return *it;
-+}
-+
-+QJsonArray SerializedTorrentsCache::trackers(const BitTorrent::Torrent &torrent)
-+{
-+    auto it = m_trackers.constFind(torrent.id());
-+    if (it == m_trackers.cend())
-+    {
-+        QJsonArray serializedTrackers;
-+        for (const BitTorrent::TrackerEntryStatus &trackerStatus : asConst(torrent.trackers()))
-+            serializedTrackers.append(serialize(trackerStatus));
-+        it = m_trackers.insert(torrent.id(), serializedTrackers);
-+    }
-+    return *it;
-+}
-+
-+void SerializedTorrentsCache::invalidate(const BitTorrent::Torrent *torrent)
-+{
-+    m_cache.remove(torrent->id());
-+}
-+
-+void SerializedTorrentsCache::invalidateWithTrackers(const BitTorrent::Torrent *torrent)
-+{
-+    m_cache.remove(torrent->id());
-+    m_trackers.remove(torrent->id());
-+}
-diff --git a/src/webui/api/serializedtorrentscache.h b/src/webui/api/serializedtorrentscache.h
-new file mode 100644
-index 000000000..5fe840aba
---- /dev/null
-+++ b/src/webui/api/serializedtorrentscache.h
-@@ -0,0 +1,65 @@
-+/*
-+ * Bittorrent Client using Qt and libtorrent.
-+ * Copyright (C) 2026  nitrobass24
-+ *
-+ * This program is free software; you can redistribute it and/or
-+ * modify it under the terms of the GNU General Public License
-+ * as published by the Free Software Foundation; either version 2
-+ * of the License, or (at your option) any later version.
-+ *
-+ * This program is distributed in the hope that it will be useful,
-+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+ * GNU General Public License for more details.
-+ *
-+ * You should have received a copy of the GNU General Public License
-+ * along with this program; if not, write to the Free Software
-+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-+ *
-+ * In addition, as a special exception, the copyright holders give permission to
-+ * link this program with the OpenSSL project's "OpenSSL" library (or with
-+ * modified versions of it that use the same license as the "OpenSSL" library),
-+ * and distribute the linked executables. You must obey the GNU General Public
-+ * License in all respects for all of the code used other than "OpenSSL".  If you
-+ * modify file(s), you may extend this exception to your version of the file(s),
-+ * but you are not obligated to do so. If you do not wish to do so, delete this
-+ * exception statement from your version.
-+ */
-+
-+#pragma once
-+
-+#include <QHash>
-+#include <QJsonArray>
-+#include <QJsonObject>
-+#include <QObject>
-+
-+#include "base/bittorrent/infohash.h"
-+
-+namespace BitTorrent
-+{
-+    class Torrent;
-+}
-+
-+// Application-wide cache of serialized torrents. Serializing a torrent and
-+// converting the result to JSON is expensive and identical for all WebAPI
-+// clients, so it is done once per torrent change and shared between requests.
-+// Entries are evicted when the corresponding torrent reports a change and
-+// are lazily re-created on next access.
-+class SerializedTorrentsCache final : public QObject
-+{
-+    Q_OBJECT
-+    Q_DISABLE_COPY_MOVE(SerializedTorrentsCache)
-+
-+public:
-+    explicit SerializedTorrentsCache(QObject *parent = nullptr);
-+
-+    QJsonObject value(const BitTorrent::Torrent &torrent);
-+    QJsonArray trackers(const BitTorrent::Torrent &torrent);
-+
-+private:
-+    void invalidate(const BitTorrent::Torrent *torrent);
-+    void invalidateWithTrackers(const BitTorrent::Torrent *torrent);
-+
-+    QHash<BitTorrent::TorrentID, QJsonObject> m_cache;
-+    QHash<BitTorrent::TorrentID, QJsonArray> m_trackers;
-+};
 diff --git a/src/webui/api/synccontroller.cpp b/src/webui/api/synccontroller.cpp
 index e9b3ea13e..2dc3f951e 100644
 --- a/src/webui/api/synccontroller.cpp
@@ -2068,7 +1893,7 @@ index b530280ae..91b0ae875 100644
      int m_maindataAcceptedID = -1;
  };
 diff --git a/src/webui/api/torrentscontroller.cpp b/src/webui/api/torrentscontroller.cpp
-index 752053b43..0e467cb83 100644
+index 752053b43..01de5ad6c 100644
 --- a/src/webui/api/torrentscontroller.cpp
 +++ b/src/webui/api/torrentscontroller.cpp
 @@ -69,22 +69,8 @@
@@ -2092,11 +1917,19 @@ index 752053b43..0e467cb83 100644
 -const QString KEY_TRACKER_MIN_ANNOUNCE = u"min_announce"_s;
 -const QString KEY_TRACKER_ENDPOINTS = u"endpoints"_s;
 +#include "serialize/serialize_trackerentry.h"
-+#include "serializedtorrentscache.h"
++#include "torrentserializer.h"
  
  // Web seed keys
  const QString KEY_WEBSEED_URL = u"url"_s;
-@@ -277,60 +263,6 @@ namespace
+@@ -133,7 +119,6 @@ const QString KEY_PROP_SSL_DHPARAMS = u"ssl_dh_params"_s;
+ const QString KEY_PROP_HAS_METADATA = u"has_metadata"_s;
+ const QString KEY_PROP_PROGRESS = u"progress"_s;
+ const QString KEY_PROP_FILES = u"files"_s;
+-const QString KEY_PROP_TRACKERS = u"trackers"_s;
+ 
+ 
+ // File keys
+@@ -277,60 +262,6 @@ namespace
          return {dht, pex, lsd};
      }
  
@@ -2157,18 +1990,18 @@ index 752053b43..0e467cb83 100644
      QJsonArray getFiles(const BitTorrent::Torrent *const torrent, QList<int> fileIndexes = {})
      {
          Q_ASSERT(torrent->hasMetadata());
-@@ -551,8 +483,9 @@ namespace
+@@ -551,8 +482,9 @@ namespace
      }
  }
  
 -TorrentsController::TorrentsController(IApplication *app, QObject *parent)
-+TorrentsController::TorrentsController(SerializedTorrentsCache *serializationCache, IApplication *app, QObject *parent)
++TorrentsController::TorrentsController(TorrentSerializer *torrentSerializer, IApplication *app, QObject *parent)
      : APIController(app, parent)
-+    , m_serializationCache {serializationCache}
++    , m_torrentSerializer {torrentSerializer}
  {
      connect(BitTorrent::Session::instance(), &BitTorrent::Session::metadataDownloaded, this, &TorrentsController::onMetadataDownloaded);
  }
-@@ -618,18 +551,18 @@ void TorrentsController::infoAction()
+@@ -618,18 +550,16 @@ void TorrentsController::infoAction()
      }
  
      const TorrentFilter torrentFilter {parseTorrentStatus(filter), idSet, category, tag, isPrivate};
@@ -2180,17 +2013,16 @@ index 752053b43..0e467cb83 100644
              continue;
  
 -        QVariantMap serializedTorrent = serialize(*torrent);
-+        QJsonObject serializedTorrent = m_serializationCache->value(*torrent);
++        QJsonObject serializedTorrent = m_torrentSerializer->serializeTorrent(*torrent, includeTrackers);
  
          if (includeFiles && torrent->hasMetadata())
              serializedTorrent.insert(KEY_PROP_FILES, getFiles(torrent));
-         if (includeTrackers)
+-        if (includeTrackers)
 -            serializedTorrent.insert(KEY_PROP_TRACKERS, getTrackers(torrent));
-+            serializedTorrent.insert(KEY_PROP_TRACKERS, m_serializationCache->trackers(*torrent));
  
          torrentList.append(serializedTorrent);
      }
-@@ -642,40 +575,25 @@ void TorrentsController::infoAction()
+@@ -642,40 +572,25 @@ void TorrentsController::infoAction()
  
      if (!sortedColumn.isEmpty())
      {
@@ -2242,7 +2074,7 @@ index 752053b43..0e467cb83 100644
              return reverse ? lessThan(value2, value1) : lessThan(value1, value2);
          });
      }
-@@ -691,7 +609,10 @@ void TorrentsController::infoAction()
+@@ -691,7 +606,10 @@ void TorrentsController::infoAction()
      if ((limit > 0) || (offset > 0))
          torrentList = torrentList.mid(offset, limit);
  
@@ -2254,24 +2086,24 @@ index 752053b43..0e467cb83 100644
  }
  
  // Returns the properties for a torrent in JSON format.
-@@ -832,7 +753,7 @@ void TorrentsController::trackersAction()
+@@ -832,7 +750,7 @@ void TorrentsController::trackersAction()
      QJsonArray trackersList = getStickyTrackers(torrent);
  
      // merge QJsonArray
 -    for (const auto &tracker : asConst(getTrackers(torrent)))
-+    for (const auto &tracker : asConst(m_serializationCache->trackers(*torrent)))
++    for (const auto &tracker : asConst(m_torrentSerializer->serializeTrackers(*torrent)))
          trackersList.append(tracker);
  
      setResult(trackersList);
 diff --git a/src/webui/api/torrentscontroller.h b/src/webui/api/torrentscontroller.h
-index d3ef62a9d..52dab6b10 100644
+index d3ef62a9d..478006a0c 100644
 --- a/src/webui/api/torrentscontroller.h
 +++ b/src/webui/api/torrentscontroller.h
 @@ -48,13 +48,15 @@ namespace Net
      struct DownloadResult;
  }
  
-+class SerializedTorrentsCache;
++class TorrentSerializer;
 +
  class TorrentsController : public APIController
  {
@@ -2280,7 +2112,7 @@ index d3ef62a9d..52dab6b10 100644
  
  public:
 -    explicit TorrentsController(IApplication *app, QObject *parent = nullptr);
-+    TorrentsController(SerializedTorrentsCache *serializationCache, IApplication *app, QObject *parent = nullptr);
++    TorrentsController(TorrentSerializer *torrentSerializer, IApplication *app, QObject *parent = nullptr);
  
  private slots:
      void countAction();
@@ -2288,15 +2120,203 @@ index d3ef62a9d..52dab6b10 100644
      void cacheTorrentFile(const QString &source, const QByteArray &data);
      void cacheMagnetURI(const QString &source, const BitTorrent::TorrentDescriptor &torrentDescr);
  
-+    SerializedTorrentsCache *m_serializationCache = nullptr;
++    TorrentSerializer *m_torrentSerializer = nullptr;
      QHash<QString, BitTorrent::InfoHash> m_torrentSourceCache;
      QHash<BitTorrent::TorrentID, BitTorrent::TorrentDescriptor> m_torrentMetadataCache;
      QSet<QString> m_requestedTorrentSource;
+diff --git a/src/webui/api/torrentserializer.cpp b/src/webui/api/torrentserializer.cpp
+new file mode 100644
+index 000000000..90aece747
+--- /dev/null
++++ b/src/webui/api/torrentserializer.cpp
+@@ -0,0 +1,110 @@
++/*
++ * Bittorrent Client using Qt and libtorrent.
++ * Copyright (C) 2026  nitrobass24
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ * In addition, as a special exception, the copyright holders give permission to
++ * link this program with the OpenSSL project's "OpenSSL" library (or with
++ * modified versions of it that use the same license as the "OpenSSL" library),
++ * and distribute the linked executables. You must obey the GNU General Public
++ * License in all respects for all of the code used other than "OpenSSL".  If you
++ * modify file(s), you may extend this exception to your version of the file(s),
++ * but you are not obligated to do so. If you do not wish to do so, delete this
++ * exception statement from your version.
++ */
++
++#include "torrentserializer.h"
++
++#include <QJsonArray>
++#include <QList>
++
++#include "base/bittorrent/session.h"
++#include "base/bittorrent/torrent.h"
++#include "base/bittorrent/trackerentrystatus.h"
++#include "base/global.h"
++#include "serialize/serialize_torrent.h"
++#include "serialize/serialize_trackerentry.h"
++
++const QString KEY_PROP_TRACKERS = u"trackers"_s;
++
++TorrentSerializer::TorrentSerializer(QObject *parent)
++    : QObject(parent)
++{
++    const auto *session = BitTorrent::Session::instance();
++    connect(session, &BitTorrent::Session::torrentsUpdated, this
++            , [this](const QList<BitTorrent::Torrent *> &torrents)
++    {
++        for (const BitTorrent::Torrent *torrent : torrents)
++            invalidate(torrent);
++    });
++    connect(session, &BitTorrent::Session::torrentAboutToBeRemoved, this, &TorrentSerializer::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::torrentCategoryChanged, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentFinished, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentFinishedChecking, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentMetadataReceived, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentStopped, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentStarted, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentSavePathChanged, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentSavingModeChanged, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentTagAdded, this, &TorrentSerializer::invalidate);
++    connect(session, &BitTorrent::Session::torrentTagRemoved, this, &TorrentSerializer::invalidate);
++    // tracker changes also affect fields of the serialized torrent itself
++    // ("tracker", "trackers_count", "reannounce"), so they invalidate both caches
++    connect(session, &BitTorrent::Session::trackersAdded, this, &TorrentSerializer::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackersRemoved, this, &TorrentSerializer::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackersReset, this, &TorrentSerializer::invalidateWithTrackers);
++    connect(session, &BitTorrent::Session::trackerEntryStatusesUpdated, this, &TorrentSerializer::invalidateWithTrackers);
++}
++
++QJsonObject TorrentSerializer::serializeTorrent(const BitTorrent::Torrent &torrent, const bool includeTrackers)
++{
++    auto it = m_torrentsCache.constFind(torrent.id());
++    if (it == m_torrentsCache.cend())
++        it = m_torrentsCache.insert(torrent.id(), QJsonObject::fromVariantMap(serialize(torrent)));
++
++    if (!includeTrackers)
++        return *it;
++
++    // copy deliberately: inserting into *it would leak trackers into the
++    // cached torrent object shared by callers that don't request them
++    QJsonObject result = *it;
++    result.insert(KEY_PROP_TRACKERS, serializeTrackers(torrent));
++    return result;
++}
++
++QJsonArray TorrentSerializer::serializeTrackers(const BitTorrent::Torrent &torrent)
++{
++    auto it = m_trackersCache.constFind(torrent.id());
++    if (it == m_trackersCache.cend())
++    {
++        QJsonArray serializedTrackers;
++        for (const BitTorrent::TrackerEntryStatus &trackerStatus : asConst(torrent.trackers()))
++            serializedTrackers.append(serialize(trackerStatus));
++        it = m_trackersCache.insert(torrent.id(), serializedTrackers);
++    }
++    return *it;
++}
++
++void TorrentSerializer::invalidate(const BitTorrent::Torrent *torrent)
++{
++    m_torrentsCache.remove(torrent->id());
++}
++
++void TorrentSerializer::invalidateWithTrackers(const BitTorrent::Torrent *torrent)
++{
++    m_torrentsCache.remove(torrent->id());
++    m_trackersCache.remove(torrent->id());
++}
+diff --git a/src/webui/api/torrentserializer.h b/src/webui/api/torrentserializer.h
+new file mode 100644
+index 000000000..ecdd4c812
+--- /dev/null
++++ b/src/webui/api/torrentserializer.h
+@@ -0,0 +1,66 @@
++/*
++ * Bittorrent Client using Qt and libtorrent.
++ * Copyright (C) 2026  nitrobass24
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ *
++ * In addition, as a special exception, the copyright holders give permission to
++ * link this program with the OpenSSL project's "OpenSSL" library (or with
++ * modified versions of it that use the same license as the "OpenSSL" library),
++ * and distribute the linked executables. You must obey the GNU General Public
++ * License in all respects for all of the code used other than "OpenSSL".  If you
++ * modify file(s), you may extend this exception to your version of the file(s),
++ * but you are not obligated to do so. If you do not wish to do so, delete this
++ * exception statement from your version.
++ */
++
++#pragma once
++
++#include <QHash>
++#include <QJsonArray>
++#include <QJsonObject>
++#include <QObject>
++
++#include "base/bittorrent/infohash.h"
++
++namespace BitTorrent
++{
++    class Torrent;
++}
++
++// Serializes torrents and their trackers to JSON for the WebAPI. Serializing
++// a torrent and converting the result to JSON is expensive and identical for
++// all WebAPI clients, so results are cached internally, keyed per torrent,
++// and shared between requests. Cache entries are evicted when the
++// corresponding torrent reports a change and are lazily re-created on next
++// access.
++class TorrentSerializer final : public QObject
++{
++    Q_OBJECT
++    Q_DISABLE_COPY_MOVE(TorrentSerializer)
++
++public:
++    explicit TorrentSerializer(QObject *parent = nullptr);
++
++    QJsonObject serializeTorrent(const BitTorrent::Torrent &torrent, bool includeTrackers = false);
++    QJsonArray serializeTrackers(const BitTorrent::Torrent &torrent);
++
++private:
++    void invalidate(const BitTorrent::Torrent *torrent);
++    void invalidateWithTrackers(const BitTorrent::Torrent *torrent);
++
++    QHash<BitTorrent::TorrentID, QJsonObject> m_torrentsCache;
++    QHash<BitTorrent::TorrentID, QJsonArray> m_trackersCache;
++};
 diff --git a/src/webui/webapplication.cpp b/src/webui/webapplication.cpp
-index 91d9c80fd..7f77a0512 100644
+index 91d9c80fd..95762824f 100644
 --- a/src/webui/webapplication.cpp
 +++ b/src/webui/webapplication.cpp
-@@ -63,8 +63,11 @@
+@@ -63,11 +63,14 @@
  #include "api/authcontroller.h"
  #include "api/clientdatacontroller.h"
  #include "api/logcontroller.h"
@@ -2304,15 +2324,18 @@ index 91d9c80fd..7f77a0512 100644
 +#include "api/maindatastore.h"
  #include "api/rsscontroller.h"
  #include "api/searchcontroller.h"
-+#include "api/serializedtorrentscache.h"
  #include "api/synccontroller.h"
  #include "api/torrentcreatorcontroller.h"
  #include "api/torrentscontroller.h"
++#include "api/torrentserializer.h"
+ #include "api/transfercontroller.h"
+ #include "clientdatastorage.h"
+ 
 @@ -165,6 +168,7 @@ WebApplication::WebApplication(IApplication *app, QObject *parent)
      , m_authController {new AuthController(this, app, this)}
      , m_torrentCreationManager {new BitTorrent::TorrentCreationManager(app, this)}
      , m_clientDataStorage {new ClientDataStorage(this)}
-+    , m_serializedTorrentsCache {new SerializedTorrentsCache(this)}
++    , m_torrentSerializer {new TorrentSerializer(this)}
  {
      declarePublicAPI(u"auth/login"_s);
  
@@ -2321,7 +2344,7 @@ index 91d9c80fd..7f77a0512 100644
      m_currentSession->registerAPIController(u"rss"_s, new RSSController(app(), m_currentSession));
      m_currentSession->registerAPIController(u"search"_s, new SearchController(app(), m_currentSession));
 -    m_currentSession->registerAPIController(u"torrents"_s, new TorrentsController(app(), m_currentSession));
-+    m_currentSession->registerAPIController(u"torrents"_s, new TorrentsController(m_serializedTorrentsCache, app(), m_currentSession));
++    m_currentSession->registerAPIController(u"torrents"_s, new TorrentsController(m_torrentSerializer, app(), m_currentSession));
      m_currentSession->registerAPIController(u"transfer"_s, new TransferController(app(), m_currentSession));
  
 -    const auto *btSession = BitTorrent::Session::instance();
@@ -2341,7 +2364,7 @@ index 91d9c80fd..7f77a0512 100644
      if (useCookie)
          setSessionCookie();
 diff --git a/src/webui/webapplication.h b/src/webui/webapplication.h
-index 3dedda7b9..a34f06528 100644
+index 3dedda7b9..d196e2078 100644
 --- a/src/webui/webapplication.h
 +++ b/src/webui/webapplication.h
 @@ -62,6 +62,8 @@ inline const Utils::Version<3, 2> API_VERSION {2, 15, 1};
@@ -2349,7 +2372,7 @@ index 3dedda7b9..a34f06528 100644
  class AuthController;
  class ClientDataStorage;
 +class MaindataStore;
-+class SerializedTorrentsCache;
++class TorrentSerializer;
  class WebApplication;
  
  namespace BitTorrent
@@ -2357,7 +2380,7 @@ index 3dedda7b9..a34f06528 100644
  
      BitTorrent::TorrentCreationManager *m_torrentCreationManager = nullptr;
      ClientDataStorage *m_clientDataStorage = nullptr;
-+    SerializedTorrentsCache *m_serializedTorrentsCache = nullptr;
++    TorrentSerializer *m_torrentSerializer = nullptr;
 +    MaindataStore *m_maindataStore = nullptr;
  
      struct FailedLogin
